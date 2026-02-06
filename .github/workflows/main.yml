@@ -83,7 +83,7 @@ jobs:
               
               # 1. FIXED: Added Node.js 20 Layer so 'node' command exists
               layers:
-                - acs:fc:${{ secrets.ALIYUN_REGION }}:official:layers/Nodejs20/versions/latest
+                - acs:fc:${{ secrets.ALIYUN_REGION }}:official:layers/Nodejs20/versions/3
                 
               environmentVariables:
                 # 2. FIXED: PORT must be a string (wrapped in quotes)
