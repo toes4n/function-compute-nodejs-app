@@ -18,17 +18,16 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20' # Using LTS version
+        node-version: '20'
 
     - name: Install dependencies
       run: npm ci
 
-    # Remove devDependencies (like testing tools) to keep the zip file small
     - name: Prune development dependencies
       run: npm prune --production
 
     - name: Create Bootstrap File
-      # FC Custom Runtime needs a executable named 'bootstrap' to start your app
+      # We assume 'node' is in the path (handled by the Layer/Env config below)
       run: |
         echo '#!/bin/bash' > bootstrap
         echo 'node server.js' >> bootstrap
@@ -58,16 +57,13 @@ jobs:
       with:
         name: function-package
         
-    # 1. Serverless Devs Tool install via npm  
     - name: Install Serverless Devs
       run: npm install -g @serverless-devs/s
 
-    # 2. Alibaba Cloud Access Key Login
     - name: Configure Serverless Devs
       run: |
         s config add --AccessKeyID "${{ secrets.ALIYUN_ACCESS_KEY_ID }}" --AccessKeySecret "${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}" -a default -f
 
-    # 3. Create s.yaml for deploy
     - name: Create s.yaml Configuration
       run: |
         cat <<EOF > s.yaml
@@ -80,18 +76,26 @@ jobs:
             props:
               region: ${{ secrets.ALIYUN_REGION }}
               functionName: node-game-function
-              runtime: nodejs20
+              runtime: custom.debian10
               code: ./function.zip
               timeout: 60
               memorySize: 512
+              
+              # 1. FIXED: Added Node.js 20 Layer so 'node' command exists
+              layers:
+                - acs:fc:${{ secrets.ALIYUN_REGION }}:official:layers/Nodejs20/versions/latest
+                
               environmentVariables:
+                # 2. FIXED: PORT must be a string (wrapped in quotes)
                 PORT: "9000" 
+                # 3. FIXED: Added Layer bin path to PATH so ./bootstrap can find 'node'
+                PATH: /opt/nodejs20/bin:/usr/local/bin:/usr/bin:/bin
+                
               customRuntimeConfig:
                 command:
                   - ./bootstrap
                 port: 9000
         EOF
 
-    # 4. Deploy to Alibaba Cloud Function Compute
     - name: Deploy to Alibaba Cloud
       run: s deploy -y
