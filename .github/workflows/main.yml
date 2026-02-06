@@ -80,7 +80,7 @@ jobs:
             props:
               region: ${{ secrets.ALIYUN_REGION }}
               functionName: node-game-function
-              runtime: custom.debian10
+              runtime: nodejs20
               code: ./function.zip
               timeout: 60
               memorySize: 512
