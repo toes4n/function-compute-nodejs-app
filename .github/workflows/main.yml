@@ -1,0 +1,97 @@
+name: Build and Deploy Node.js to Alibaba Function Compute
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and Package
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20' # Using LTS version
+
+    - name: Install dependencies
+      run: npm ci
+
+    # Remove devDependencies (like testing tools) to keep the zip file small
+    - name: Prune development dependencies
+      run: npm prune --production
+
+    - name: Create Bootstrap File
+      # FC Custom Runtime needs a executable named 'bootstrap' to start your app
+      run: |
+        echo '#!/bin/bash' > bootstrap
+        echo 'node server.js' >> bootstrap
+        chmod +x bootstrap
+
+    - name: Create Function Zip
+      run: |
+        zip -r function.zip . -x "*.git*" -x ".github/*"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: function-package
+        path: function.zip
+        retention-days: 5
+
+  deploy:
+    name: Deploy to FC
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - name: Download Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: function-package
+        
+    # 1. Serverless Devs Tool install via npm  
+    - name: Install Serverless Devs
+      run: npm install -g @serverless-devs/s
+
+    # 2. Alibaba Cloud Access Key Login
+    - name: Configure Serverless Devs
+      run: |
+        s config add --AccessKeyID "${{ secrets.ALIYUN_ACCESS_KEY_ID }}" --AccessKeySecret "${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}" -a default -f
+
+    # 3. Create s.yaml for deploy
+    - name: Create s.yaml Configuration
+      run: |
+        cat <<EOF > s.yaml
+        edition: 3.0.0
+        name: cicd-deploy
+        access: default
+        resources:
+          function_resource:
+            component: fc3
+            props:
+              region: ${{ secrets.ALIYUN_REGION }}
+              functionName: node-game-function
+              runtime: custom.debian10
+              code: ./function.zip
+              timeout: 60
+              memorySize: 512
+              environmentVariables:
+                PORT: 9000 
+              customRuntimeConfig:
+                command:
+                  - ./bootstrap
+                port: 9000
+        EOF
+
+    # 4. Deploy to Alibaba Cloud Function Compute
+    - name: Deploy to Alibaba Cloud
+      run: s deploy -y
